@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>C.S Bytebeat Player</title>
+  <link rel="icon" href="https://yt3.googleusercontent.com/VQ8g2TGeoEJDsfAl1ET-XFnSaG0DplnfKsC61db86zGYPdoyXzYzHeJlGKkMxtomoSl0sKAn=s120-c-k-c0x00ffffff-no-rj">
+  <style>
+    body {
+      background: #121212;
+      color: #00ff00;
+      font-family: 'Courier New', Courier, monospace;
+      text-align: center;
+      margin: 20px;
+    }
+    h1 {
+      font-weight: 700;
+      text-shadow: 0 0 5px #00ff00;
+    }
+    textarea {
+      background: #1e1e1e;
+      color: #00ff00;
+      border: 2px solid #00ff00;
+      border-radius: 6px;
+      padding: 10px;
+      font-family: monospace;
+      font-size: 16px;
+      resize: vertical;
+      transition: border-color 0.3s ease;
+    }
+    textarea:focus {
+      outline: none;
+      border-color: #55ff55;
+      box-shadow: 0 0 8px #55ff55;
+    }
+    input[type="number"] {
+      background: #1e1e1e;
+      color: #00ff00;
+      border: 2px solid #00ff00;
+      border-radius: 6px;
+      padding: 6px 10px;
+      width: 100px;
+      font-size: 16px;
+      transition: border-color 0.3s ease;
+    }
+    input[type="number"]:focus {
+      outline: none;
+      border-color: #55ff55;
+      box-shadow: 0 0 8px #55ff55;
+    }
+    button {
+      background: #222;
+      color: #00ff00;
+      border: 2px solid #00ff00;
+      border-radius: 8px;
+      padding: 8px 18px;
+      font-family: monospace;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background-color 0.3s ease, color 0.3s ease;
+      user-select: none;
+    }
+    button:hover {
+      background-color: #00ff00;
+      color: #121212;
+    }
+    button:focus {
+      outline: none;
+      box-shadow: 0 0 10px #55ff55;
+    }
+    canvas {
+      border: 2px solid #00ff00;
+      margin-top: 15px;
+      border-radius: 8px;
+      background: #111;
+      box-shadow: 0 0 8px #00ff00;
+    }
+    #imgpreview {
+      margin-top: 15px;
+      border: 2px solid #00ff00;
+      border-radius: 8px;
+      display: none;
+      box-shadow: 0 0 10px #00ff00;
+    }
+    footer {
+      text-align: center;
+      padding: 10px;
+      font-size: 10px;
+      width: 100%;
+      bottom: 0;
+    }
+  
+    .title-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    height: 100px;
+  }
+
+  .logo {
+    width: 50px;
+    height: 50px;
+  }
+
+  .title {
+    margin: 0;
+    font-size: 24px;
+    color: #00ff00;
+    font-family: monospace;
+  }
+  </style>
+</head>
+<body>
+  <div class="title-container">
+  <img src="https://yt3.googleusercontent.com/VQ8g2TGeoEJDsfAl1ET-XFnSaG0DplnfKsC61db86zGYPdoyXzYzHeJlGKkMxtomoSl0sKAn=s120-c-k-c0x00ffffff-no-rj" class="logo" alt="Logo">
+  <h1 class="title">C.S Bytebeat Player</h1>
+</div>
+
+
+
+  <textarea id="code" rows="4" cols="60" oninput="onCodeChange()">(t>>4|t>>5)&t%255</textarea><br>
+  <label>Sample Rate (Hz): <input type="number" id="samplerate" value="8000" min="1000" max="48000" oninput="onCodeChange()"></label><br>
+  <button onclick="play()">▶ Play</button>
+  <button onclick="stop()">⏹ Stop</button>
+  <button onclick="saveCode()">💾 Save .bytbit</button>
+  <button onclick="loadCode()">📂 Load .bytbit</button>
+  <button onclick="downloadWav()">📥 Download .wav</button><br>
+
+  <canvas id="scope" width="512" height="100"></canvas><br>
+  <canvas id="imgcanvas" width="256" height="256" style="display:none"></canvas><br>
+  <img id="imgpreview" width="256" height="256">
+
+  <input type="file" id="fileinput" style="display:none" accept=".bytbit" onchange="loadBytbit(event)">
+
+  <script>
+    let ctx, src, playing = false, t = 0, func;
+    const scope = document.getElementById("scope").getContext("2d");
+
+    // URL theke query parameter niye asha
+    function getQueryParam(param) {
+      const params = new URLSearchParams(window.location.search);
+      return params.get(param);
+    }
+
+    // URL update kora with code and sample rate
+    function updateUrl(code, samplerate) {
+      const encodedCode = encodeURIComponent(code);
+      const encodedRate = encodeURIComponent(samplerate);
+      const newUrl = `${window.location.origin}${window.location.pathname}?code=${encodedCode}&samplerate=${encodedRate}`;
+      window.history.replaceState(null, '', newUrl);
+    }
+
+    // Compile function
+    function compile(code, visual = false) {
+      try {
+        return new Function("t", "return " + code);
+      } catch (e) {
+        if (visual) {
+          let errFunc = () => 0;
+          errFunc.error = true;
+          return errFunc;
+        }
+        console.log("Invalid Code!");
+        return (t) => 0;
+      }
+    }
+
+    // Play function
+    function play() {
+      if (playing) return;
+      t = 0;
+      let userCode = document.getElementById("code").value;
+      let rate = parseInt(document.getElementById("samplerate").value) || 8000;
+      func = compile(userCode);
+      ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: rate });
+      const bufferSize = 512;
+      src = ctx.createScriptProcessor(bufferSize, 0, 2);
+      src.onaudioprocess = (e) => {
+        let outL = e.outputBuffer.getChannelData(0);
+        let outR = e.outputBuffer.getChannelData(1);
+        scope.clearRect(0, 0, 512, 100);
+        for (let i = 0; i < bufferSize; i++, t++) {
+          let result = func(t);
+          let l = ((Array.isArray(result) ? result[0] : result) & 255) - 128;
+          let r = ((Array.isArray(result) ? result[1] : result) & 255) - 128;
+          outL[i] = l / 128;
+          outR[i] = r / 128;
+          if (i < 512) {
+            let yL = 50 - l / 2;
+            let yR = 50 - r / 2;
+            scope.fillStyle = "lime";
+            scope.fillRect(i, yL, 1, 1);
+            scope.fillStyle = "hotpink";
+            scope.fillRect(i, yR, 1, 1);
+          }
+        }
+      };
+      src.connect(ctx.destination);
+      playing = true;
+    }
+
+    // Stop function
+    function stop() {
+      if (!playing) return;
+      src.disconnect();
+      ctx.close();
+      playing = false;
+    }
+
+    // Restart playback and generate image
+    function restartPlayback() {
+      generateImage();
+      if (playing) {
+        stop();
+        setTimeout(play, 100);
+      }
+    }
+
+    // Generate waveform image
+    function generateImage() {
+      let canvas = document.getElementById("imgcanvas");
+      let ctx = canvas.getContext("2d");
+      let img = ctx.createImageData(256, 256);
+      let code = document.getElementById("code").value;
+      let func = compile(code, true);
+
+      if (func.error) {
+        ctx.clearRect(0, 0, 256, 256);
+        ctx.fillStyle = "red";
+        ctx.font = "16px monospace";
+        ctx.fillText("Invalid Code!", 70, 128);
+        document.getElementById("imgpreview").src = canvas.toDataURL("image/png");
+        document.getElementById("imgpreview").style.display = 'inline';
+        return;
+      }
+
+      for (let y = 0; y < 256; y++) {
+        for (let x = 0; x < 256; x++) {
+          let t = y * 256 + x;
+          let val = func(t);
+          let v = Array.isArray(val) ? (val[0] + val[1]) >> 1 : val;
+          v = v & 255;
+          let i = (y * 256 + x) * 4;
+          img.data[i + 0] = 0;
+          img.data[i + 1] = 0;
+          img.data[i + 2] = v;
+          img.data[i + 3] = 255;
+        }
+      }
+      ctx.putImageData(img, 0, 0);
+      document.getElementById("imgpreview").src = canvas.toDataURL("image/png");
+      document.getElementById("imgpreview").style.display = 'inline';
+    }
+
+    // Save code function (same as before)
+    function saveCode() {
+      let code = document.getElementById("code").value;
+      let obfuscated = "eval(unescape(escape`" + Array.from(code).map(c => String.fromCharCode(c.charCodeAt(0) + 1000)).join("") + "`.replace(/u(..)/g,\"$1%\")))";
+      let blob = new Blob([obfuscated], { type: "text/plain" });
+      let a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "code.bytbit";
+      a.click();
+    }
+
+    // Load code function (same as before)
+    function loadCode() {
+      document.getElementById("fileinput").click();
+    }
+
+    // Load .bytbit file (same as before)
+    function loadBytbit(event) {
+      let file = event.target.files[0];
+      if (!file) return;
+      let reader = new FileReader();
+      reader.onload = () => {
+        let data = reader.result;
+        try {
+          let encoded = data.match(/`([^`]*)`/)[1];
+          let deob = Array.from(encoded).map(c => String.fromCharCode(c.charCodeAt(0) - 1000)).join('');
+          document.getElementById("code").value = deob;
+          onCodeChange();
+        } catch (e) {
+          alert("Invalid .bytbit file!");
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    // Download WAV file (fixed minor typos)
+    function downloadWav() {
+      let userCode = document.getElementById("code").value;
+      let rate = parseInt(document.getElementById("samplerate").value) || 8000;
+      let duration = prompt("Enter duration in seconds (default 30):", "30");
+      duration = parseInt(duration) || 30;
+
+      let func = compile(userCode);
+      let length = rate * duration;
+      let samples = new Int16Array(length);
+
+      for (let t = 0; t < length; t++) {
+        let sample = func(t);
+        if (Array.isArray(sample)) sample = (sample[0] + sample[1]) / 2;
+        sample = (sample & 255);
+        let signedSample = ((sample - 128) / 128) * 32767;
+        samples[t] = Math.max(-32768, Math.min(32767, signedSample));
+      }
+
+      let wav = new Uint8Array(44 + samples.length * 2);
+      let dv = new DataView(wav.buffer);
+      const writeString = (offset, str) => {
+        for (let i = 0; i < str.length; i++) dv.setUint8(offset + i, str.charCodeAt(i));
+      };
+
+      writeString(0, 'RIFF');
+      dv.setUint32(4, 36 + samples.length * 2, true);
+      writeString(8, 'WAVEfmt ');
+      dv.setUint32(16, 16, true);
+      dv.setUint16(20, 1, true);
+      dv.setUint16(22, 1, true);
+      dv.setUint32(24, rate, true);
+      dv.setUint32(28, rate * 2, true);
+      dv.setUint16(32, 2, true);
+      dv.setUint16(34, 16, true);
+      writeString(36, 'data');
+      dv.setUint32(40, samples.length * 2, true);
+
+      for (let i = 0; i < samples.length; i++) {
+        dv.setInt16(44 + i * 2, samples[i], true);
+      }
+
+      let blob = new Blob([wav], { type: 'audio/wav' });
+      let a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `bytebeat_${duration}s.wav`;
+      a.click();
+    }
+
+    // When code or sample rate changes: update URL and restart playback
+    function onCodeChange() {
+      const code = document.getElementById("code").value;
+      const samplerate = document.getElementById("samplerate").value;
+      updateUrl(code, samplerate);
+      restartPlayback();
+    }
+
+    // On page load: load code and sample rate from URL if present
+    window.onload = () => {
+      const urlCode = getQueryParam("code");
+      const urlRate = getQueryParam("samplerate");
+      if (urlCode) {
+        document.getElementById("code").value = decodeURIComponent(urlCode);
+      }
+      if (urlRate) {
+        document.getElementById("samplerate").value = urlRate;
+      }
+      generateImage();
+    }
+  </script>
+
+  <footer>
+    &copy; 2025 <a href="https://www.youtube.com/channel/UCON2q5tin1NHZ0J6G7Yi_Kw">Cyber Slot.</a> All rights reserved. Made with ❤️ by Krishnendu Maji<br>
+  </footer>
+</body>
+</html>
